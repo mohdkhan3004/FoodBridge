@@ -72,15 +72,48 @@ def init_db():
             FOREIGN KEY(request_id) REFERENCES requests(id)
         );
         """)
-        # A demo admin is created only when the database has no admin account.
-        admin = conn.execute("SELECT id FROM users WHERE role='Admin' LIMIT 1").fetchone()
+        # Create the demo administrator if no admin account exists.
+        admin = conn.execute(
+            "SELECT id FROM users WHERE role = 'Admin' LIMIT 1"
+        ).fetchone()
+
         if not admin:
-            conn.execute(
-                """INSERT INTO users(name,email,password_hash,role,organization,location,verified,created_at)
-                   VALUES(?,?,?,?,?,?,?,?)""",
-                ("FoodBridge Administrator", "admin@foodbridge.local",
-                 hash_password("Admin@123"), "Admin", "FoodBridge", "Hyderabad", 1, now_str())
-            )
+            admin_email = "admin@foodbridge.local"
+
+            existing_user = conn.execute(
+                "SELECT id, role FROM users WHERE email = ?",
+                (admin_email,)
+            ).fetchone()
+
+            if existing_user:
+                if existing_user["role"] != "Admin":
+                    # Avoid silently changing an existing Donor/NGO account.
+                    raise RuntimeError(
+                        f"The email {admin_email} already belongs to a "
+                        f"{existing_user['role']} account. Change that "
+                        "account's email in the database or configure "
+                        "a different administrator email."
+                    )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO users (
+                        name, email, password_hash, role,
+                        organization, location, verified, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "FoodBridge Administrator",
+                        admin_email,
+                        hash_password("Admin@123"),
+                        "Admin",
+                        "FoodBridge",
+                        "Hyderabad",
+                        1,
+                        now_str()
+                    )
+                )
 
 def now_str():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
